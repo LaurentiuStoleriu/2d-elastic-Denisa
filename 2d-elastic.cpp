@@ -63,11 +63,11 @@ void Probabilities();
 
 int main()
 {
-	FILE* fp;
+	FILE *fp;
 
-	fp = fopen("C:\\Users\\denis\\Desktop\\Denisa\\CODES_SYSTEM-generation\\28_hex_syst_generation\\hexagonal_system.txt", "r");
+	fp = fopen("hexagonal_system.txt", "r");
 
-	char header[500];
+	//char header[500];
 	//fscanf(fp, "%[^\n]\n", header);
 
 	float dummy;
