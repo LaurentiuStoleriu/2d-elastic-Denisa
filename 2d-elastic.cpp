@@ -9,12 +9,13 @@
 #include "alglibmisc.h"
 using namespace alglib;
 
-constexpr int n_part = 1141;
+//#define DEBUG_PRINT
+
+constexpr int n_part = 271;
 constexpr int n_equ = n_part*4; //n_part*4
 constexpr int n_max_vec = 6;
-double prob_LH[n_part];
-double prob_HL[n_part];
-constexpr double Kf = 4.0;
+
+constexpr double Kf = 1.0;
 constexpr double mu = 0.5;
 
 double radiusHS = 0.22;
@@ -24,8 +25,8 @@ double radiusAVG = 0.215;
 double radius = radiusHS;
 double L0 = 0.6;
 double F[n_part], Fex, Fey;
-double random_value;
-long double alungirea;
+double prob_LH[n_part];
+double prob_HL[n_part];
 
 constexpr long double DH = 3040.0000;
 constexpr long double DS = 10.3000;
@@ -63,20 +64,13 @@ void Probabilities();
 
 int main()
 {
-	FILE *fp;
-
-	fp = fopen("hexagonal_system.txt", "r");
-
-	//char header[500];
-	//fscanf(fp, "%[^\n]\n", header);
-
+	FILE *fp = fopen("hexagonal_system.txt", "r");
 	float dummy;
 	for (int i = 0; i < n_part; i++)
 	{
 		fscanf(fp, "%f %lf %lf %lf %lf\n", &dummy, &Mediu[i].x, &Mediu[i].y, &Mediu[i].z, &Mediu[i].r);
 	}
 	fclose(fp);
-
 
 	alglib_function_neighbours();
 
@@ -94,15 +88,9 @@ int main()
 		sol_old[4 * i + 2] = sol[4 * i + 2];
 		sol_old[4 * i + 3] = sol[4 * i + 3];
 	}
-	// Write data to file
-	FILE* file = fopen("OSCILATIONS.txt", "w");
-	if (!file) {
-		perror("Error opening file");
-		return 1;
-	}
 
 	timp = t_init;
-	while ((diference >= 1.0e-3) || ((timp - t_init) < 10.0 * step_t))
+	while ((diference >= 1.0e-3) || ((timp - t_init) < 100.0 * step_t))
 	{
 		for (int i = 0; i < n_part; i++) //Conditii initiale
 		{
@@ -111,6 +99,7 @@ int main()
 			sol_old[4 * i + 2] = sol[4 * i + 2];
 			sol_old[4 * i + 3] = sol[4 * i + 3];
 		}
+
 		Dopri5(timp, timp + step_t, eps, step_t, step_t / 4.0, &sol[0]);
 
 		for (int i = 0; i < n_part; i++)
@@ -119,7 +108,6 @@ int main()
 			Mediu[i].y = sol[4 * i + 2];
 		}
 		timp += step_t;
-
 
 		diference = 0.0;
 		for (int i = 0; i < n_part; i++)
@@ -135,43 +123,25 @@ int main()
 			{
 				diference = dif_y;
 			}
-			fprintf(file, "%lf\t  %lf\t  %lf \n ", Mediu[i].x, Mediu[i].y, diference);
-			printf("%lf\t  %lf\t  %lf \n ", Mediu[i].x, Mediu[i].y, diference);
-
-		}fclose(file);
-		/*#ifdef DEBUG_PRINT
-					fprintf(file, "%lf\t  %lf\t  %lf \n ", Mediu[i].x, Mediu[i].y, diference);
-					fclose(file);
-		#endif
-				*/
-#ifdef DEBUG_PRINT
-				//	printf(" dif=%lf\n", diference);
-#endif*/
+		}
+		printf("timp = %lf    dif=%lf\n", timp, diference);
 	}
 
-	Probabilities();
-	
-	fclose(file);
-	//new radii file saving 
-	file = fopen("radii.txt", "w");
-	for (int i = 0; i < n_part; i++) {
-		
-		fprintf(file, "%lf\t  %lf\t  %lf \n ", Mediu[i].x, Mediu[i].y, Mediu[i].r);
-	}
-	fclose(file);
-	//*************************************************************************
-}
 
-//*************************************************************************
+	double random_value;
+	double nHS = 0.0;
+	int HS = 0;
+	int count_temp_step = 0;
 
-void Probabilities(){
-	FILE*file = fopen("T_f(nHS).txt", "w");
+	//////////////////////////////////////////////////////////////////////////
+	///  MHL - TO UP
+	//////////////////////////////////////////////////////////////////////////
+	FILE *file = fopen("T_f(nHS).txt", "w");
 	if (!file) {
 		perror("Error opening file");
-		return;
+		return(0);
 	}
-	//*************************************************************************************************************
-	//PROBABILITIES
+
 	timp = t_init;
 	for (int i = 0; i < n_part; i++) //Conditii initiale
 	{
@@ -192,81 +162,25 @@ void Probabilities(){
 		Mediu[i].x = sol[4 * i + 0];
 		Mediu[i].y = sol[4 * i + 2];
 	}
-	for (int i = 0; i < n_part; i++) {
+	for (int i = 0; i < n_part; i++) 
+	{
 		T[i] = T_LS;
 	}
-	int index_neigh = 0;
-	double Fe;
 
-	double nHS = 0.0;
-	double HS = 0.0;
-
-	// First temp decrease
-	for (double t = T_LS; t <= T_HS; t += 1.0e-3)
+	count_temp_step = 0;
+	// Temperature decrease
+	for (double temperature = T_LS; temperature <= T_HS; temperature += 1.0e-3)
 	{
-		for (int i = 0; i < n_part; i++)
+		count_temp_step++;
+		for (int i = 0; i < n_part; i++) 
 		{
-			Fe = 0.0;
-			T[i] = t;
-			for (int j = 0; j < no_of_neigh[i]; j++) {
-
-				index_neigh = neighbours[i][j];
-				Fe += (double)(Kf * (sqrt(pow((Mediu[index_neigh].x - Mediu[i].x), 2.0) + pow((Mediu[index_neigh].y - Mediu[i].y), 2.0)) - L0 - Mediu[i].r - Mediu[index_neigh].r)); 
-			}
-
-			prob_LH[i] = (double)(exp(-(DH - T[i] * DS) / 2.0 / T[i]) * exp(-((DE + ka * Fe) / T[i])) / tau);
-			prob_HL[i] = (double)(exp((DH - T[i] * DS) / 2.0 / T[i]) * exp(-((DE - ka * Fe) / T[i])) / tau);
-			//random_value = (double)rand() / RAND_MAX;
-			random_value = (double)rand() / ((double)RAND_MAX + 1);
-			
-			if ((Mediu[i].r > radiusAVG) && (prob_HL[i] > random_value))
-			{
-				Mediu[i].r = radiusLS;
-				HS--;
-			}
-			else
-			{
-				if ((Mediu[i].r < radiusAVG) && (prob_LH[i] > random_value))
-				{
-					Mediu[i].r = radiusHS;
-					HS++;
-				}
-			}
-			
+			T[i] = temperature;
 		}
-		nHS = (double)(HS / n_part);
-		fprintf(file, "%.4f\t%.4f\n    ", t, nHS);
-		printf("%.4f\t%.4f\n    ", t, nHS);
-		Dopri5(timp, timp + step_t, eps, step_t, step_t / 4.0, &sol[0]);
+
+		Probabilities();
+
 		for (int i = 0; i < n_part; i++)
 		{
-			Mediu[i].x = sol[4 * i + 0];
-			Mediu[i].y = sol[4 * i + 2];
-			sol_old[4 * i + 0] = sol[4 * i + 0];
-			sol_old[4 * i + 1] = sol[4 * i + 1];
-			sol_old[4 * i + 2] = sol[4 * i + 2];
-			sol_old[4 * i + 3] = sol[4 * i + 3];
-		}
-		
-		//printf("%.4f\t%.4f\n    ", t, nHS);
-
-		// Reverse step, increasing the temperature again 
-	}
-	for (double t = T_HS; t >= T_LS; t -= 1.0e-3)
-	{
-		for (int i = 0; i < n_part; i++)
-		{
-			Fe = 0.0;
-			T[i] = t;
-			for (int j = 0; j < no_of_neigh[i]; j++) {
-
-				index_neigh = neighbours[i][j];
-				Fe += (double)(Kf * (sqrt(pow((Mediu[index_neigh].x - Mediu[i].x), 2.0) + pow((Mediu[index_neigh].y - Mediu[i].y), 2.0)) - L0 - Mediu[i].r - Mediu[index_neigh].r));
-			}
-
-			prob_LH[i] = (double)(exp(-(DH - T[i] * DS) / 2.0 / T[i]) * exp(-((DE + ka * Fe) / T[i])) / tau);
-			prob_HL[i] = (double)(exp((DH - T[i] * DS) / 2.0 / T[i]) * exp(-((DE - ka * Fe) / T[i])) / tau);
-			//random_value = (double)rand() / RAND_MAX;
 			random_value = (double)rand() / ((double)RAND_MAX + 1);
 
 			if ((Mediu[i].r > radiusAVG) && (prob_HL[i] > random_value))
@@ -284,11 +198,10 @@ void Probabilities(){
 			}
 
 		}
-		nHS = (double)(HS / n_part);
-
-
+		nHS = (double)HS / n_part;
 
 		Dopri5(timp, timp + step_t, eps, step_t, step_t / 4.0, &sol[0]);
+
 		for (int i = 0; i < n_part; i++)
 		{
 			Mediu[i].x = sol[4 * i + 0];
@@ -298,12 +211,132 @@ void Probabilities(){
 			sol_old[4 * i + 2] = sol[4 * i + 2];
 			sol_old[4 * i + 3] = sol[4 * i + 3];
 		}
-		fprintf(file, "%.4f\t%.4f\n    ", t, nHS);
-		printf("%.4f\t%.4f\n    ", t, nHS);
 
-	
+		if ((count_temp_step % 100) == 0)
+		{
+			fprintf(file, "%.4f\t%.4f\n", temperature, nHS);
+			printf("%.4f\t %.4f\n", temperature, nHS);
+		}
 	}
 	fclose(file);
+
+
+	//////////////////////////////////////////////////////////////////////////
+	///  MHL - TO DOWN
+	//////////////////////////////////////////////////////////////////////////
+	file = fopen("T_f(nHS).txt", "a");
+	if (!file) {
+		perror("Error opening file");
+		return(0);
+	}
+
+	nHS = 1.0;
+	HS = n_part;
+
+	timp = t_init;
+	for (int i = 0; i < n_part; i++) //Conditii initiale
+	{
+		sol[4 * i + 0] = Mediu[i].x;
+		sol[4 * i + 1] = 0.0;
+		sol[4 * i + 2] = Mediu[i].y;
+		sol[4 * i + 3] = 0.0;
+
+		sol_old[4 * i + 0] = sol[4 * i + 0];
+		sol_old[4 * i + 1] = sol[4 * i + 1];
+		sol_old[4 * i + 2] = sol[4 * i + 2];
+		sol_old[4 * i + 3] = sol[4 * i + 3];
+	}
+
+	Dopri5(timp, timp + step_t, eps, step_t, step_t / 4.0, &sol[0]);
+	for (int i = 0; i < n_part; i++)
+	{
+		Mediu[i].x = sol[4 * i + 0];
+		Mediu[i].y = sol[4 * i + 2];
+	}
+
+	count_temp_step = 0;
+	// Temperature increase
+	for (double temperature = T_HS; temperature >= T_LS; temperature -= 1.0e-3)
+	{
+		count_temp_step++;
+		for (int i = 0; i < n_part; i++)
+		{
+			T[i] = temperature;
+		}
+
+		Probabilities();
+
+		for (int i = 0; i < n_part; i++)
+		{
+			random_value = (double)rand() / ((double)RAND_MAX + 1);
+
+			if ((Mediu[i].r > radiusAVG) && (prob_HL[i] > random_value))
+			{
+				Mediu[i].r = radiusLS;
+				HS--;
+			}
+			else
+			{
+				if ((Mediu[i].r < radiusAVG) && (prob_LH[i] > random_value))
+				{
+					Mediu[i].r = radiusHS;
+					HS++;
+				}
+			}
+
+		}
+		nHS = (double)HS / n_part;
+
+		Dopri5(timp, timp + step_t, eps, step_t, step_t / 4.0, &sol[0]);
+
+		for (int i = 0; i < n_part; i++)
+		{
+			Mediu[i].x = sol[4 * i + 0];
+			Mediu[i].y = sol[4 * i + 2];
+			sol_old[4 * i + 0] = sol[4 * i + 0];
+			sol_old[4 * i + 1] = sol[4 * i + 1];
+			sol_old[4 * i + 2] = sol[4 * i + 2];
+			sol_old[4 * i + 3] = sol[4 * i + 3];
+		}
+
+		if ((count_temp_step % 100) == 0)
+		{
+			fprintf(file, "%.4f\t%.4f\n", temperature, nHS);
+			printf("%.4f\t %.4f\n", temperature, nHS);
+		}
+	}
+
+
+	//new radii file saving 
+	file = fopen("radii.txt", "w");
+	for (int i = 0; i < n_part; i++) {
+		
+		fprintf(file, "%lf\t  %lf\t  %lf \n ", Mediu[i].x, Mediu[i].y, Mediu[i].r);
+	}
+	fclose(file);
+	//*************************************************************************
+}
+
+//*************************************************************************
+
+void Probabilities()
+{
+	//*************************************************************************************************************
+	//PROBABILITIES
+	int index_neigh = 0;
+	double Fe = 0.0;
+
+	for (int i = 0; i < n_part; i++)
+	{
+		Fe = 0.0;
+		for (int j = 0; j < no_of_neigh[i]; j++) 
+		{
+			index_neigh = neighbours[i][j];
+			Fe += Kf * (sqrt(pow((Mediu[index_neigh].x - Mediu[i].x), 2.0) + pow((Mediu[index_neigh].y - Mediu[i].y), 2.0)) - L0 - Mediu[i].r - Mediu[index_neigh].r);
+		}
+		prob_LH[i] = (exp(-(DH - T[i] * DS) / 2.0 / T[i]) * exp(-((DE + ka * Fe) / T[i])) / tau);
+		prob_HL[i] = (exp( (DH - T[i] * DS) / 2.0 / T[i]) * exp(-((DE - ka * Fe) / T[i])) / tau);
+	}
 }
 
 //*************************************************************************
@@ -350,18 +383,17 @@ void alglib_function_neighbours(void)
 		x(2) = Mediu[i].z;
 
 		ae_int_t k;
-		//k = kdtreequeryknn(kdt, x, 2, false);
 
 		k = kdtreequeryrnn(kdt, x, 1.1 * (2.0 * radius + L0), false);
 
 		no_of_neigh[i] = (int)k;
 
-		// 		if (neighbours[i] + 1 > n_max_vec - 1)
-		// 		{
-		// 			printf("\n\n PREA MULTI VECINI !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n\n");
-		// 			break;
-		// 		}
-		// 		else
+// 		if (neighbours[i] + 1 > n_max_vec - 1)
+// 		{
+// 			printf("\n\n PREA MULTI VECINI !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n\n");
+// 			break;
+// 		}
+// 		else
 		{
 			kdtreequeryresultstags(kdt, indexes);
 
@@ -388,7 +420,6 @@ void alglib_function_neighbours(void)
 			printf("\n");
 #endif
 		}
-
 
 		neighbours_med += no_of_neigh[i];
 		if (no_of_neigh[i] > neighbours_max)	neighbours_max = no_of_neigh[i];
@@ -430,7 +461,7 @@ int Funct_Dopri(double time, double *input, double *deriv)
 		deriv[k + 2] = input[k + 3];
 		deriv[k + 3] = (Fey - mu * input[k + 3])/* / m*/;
 	}
-	return (0);
+	return(0);
 }
 
 //*************************************************************************
